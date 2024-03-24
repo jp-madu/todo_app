@@ -1,10 +1,14 @@
 // ignore_for_file: prefer_const_constructors
 
-import 'dart:convert';
+// import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:todo_app/screens/add_page.dart';
-import 'package:http/http.dart' as http;
+// import 'package:http/http.dart' as http;
+import 'package:todo_app/services/todo_services.dart';
+import 'package:todo_app/widget/todo_cart.dart';
+
+import '../utilities/snackbar_helper.dart';
 
 class TodoListPage extends StatefulWidget {
   const TodoListPage({super.key});
@@ -18,7 +22,6 @@ class _TodoListPageState extends State<TodoListPage> {
   List items = [];
   @override
   void initState() {
-    // TODO: implement initState
     super.initState();
     fetchTodo();
   }
@@ -38,23 +41,27 @@ class _TodoListPageState extends State<TodoListPage> {
         ),
         replacement: RefreshIndicator(
           onRefresh: fetchTodo,
-          child: ListView.builder(
-            itemCount: items.length,
-            itemBuilder: (context, index) {
-              final item = items[index] as Map;
-              return ListTile(
-                leading: CircleAvatar(
-                  child: Text('${index + 1}'),
-                ),
-                title: Text(item['title']),
-                subtitle: Text(item['description']),
-                trailing: PopupMenuButton(
-                  itemBuilder: (context) {
-                    return [];
-                  },
-                ),
-              );
-            },
+          child: Visibility(
+            visible: items.isNotEmpty,
+            replacement: Center(
+              child: Text(
+                'No Todo Item',
+                style: Theme.of(context).textTheme.headline2,
+              ),
+            ),
+            child: ListView.builder(
+              padding: EdgeInsets.all(8),
+              itemCount: items.length,
+              itemBuilder: (context, index) {
+                final item = items[index] as Map;
+                final id = item['_id'] as String;
+                return TodoCard(
+                    index: index,
+                    item: item,
+                    navigateEdit: navigateToEditPage,
+                    deleteById: deleteById);
+              },
+            ),
           ),
         ),
       ),
@@ -65,25 +72,51 @@ class _TodoListPageState extends State<TodoListPage> {
     );
   }
 
-  void navigateToAddPage() {
+  Future<void> navigateToEditPage(Map item) async {
+    final route = MaterialPageRoute(
+      builder: (context) => AddTodoPage(todo: item),
+    );
+    await Navigator.push(context, route);
+    setState(() {
+      isLoading = true;
+    });
+    fetchTodo();
+  }
+
+  Future<void> navigateToAddPage() async {
     final route = MaterialPageRoute(
       builder: (context) => AddTodoPage(),
     );
-    Navigator.push(context, route);
+    await Navigator.push(context, route);
+    setState(() {
+      isLoading = true;
+    });
+    fetchTodo();
+  }
+
+  Future<void> deleteById(String id) async {
+    //delete item
+    final isSuccess = await TodoService.deleteById(id);
+    if (isSuccess) {
+      //remove item from list
+      final filtered = items.where((element) => element['_id'] != id).toList();
+      setState(() {
+        items = filtered;
+      });
+    } else {
+      //show error message
+      showErrorMessage(context, message: 'Message delete failed');
+    }
   }
 
   Future<void> fetchTodo() async {
-    final url = 'http://api.nstack.in/v1/todos?page=1&limit=10';
-    final uri = Uri.parse(url);
-    final response = await http.get(uri);
-    if (response.statusCode == 200) {
-      final json = jsonDecode(response.body) as Map;
-      final result = json['items'] as List;
+    final response = await TodoService.fetchTodos();
+    if (response != null) {
       setState(() {
-        items = result;
+        items = response;
       });
     } else {
-      print('Error fetching todos: ${response.statusCode}');
+      showErrorMessage(context, message: 'something went wrong');
     }
     setState(() {
       isLoading = false;
